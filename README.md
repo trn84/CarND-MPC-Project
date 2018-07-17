@@ -1,108 +1,45 @@
-# CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
+# Project Writeup CarND MPC
+##### Author: Bugra Turan, 05.07.2018
 
----
+### Introduction
+This is the writeup for the MPC Project of the Udacity CarND term 2. First, we will go through the implementation step-by-step. Afterwards, the parameter search will be discussed and possible ways to improve will be shown.
 
-## Dependencies
+#### 1) Implementation
+Before we go into details of the model I want to describe the process pipeline starting from the telemetry data in the main.cpp.
 
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1(mac, linux), 3.81(Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-    Some function signatures have changed in v0.14.x. See [this PR](https://github.com/udacity/CarND-MPC-Project/pull/3) for more details.
+All relevant data is used from the telemetry like track way point coordinates, (x,y) of the vehicle, the orientation, speed, steering angle, and the throttle. Next the correction value introduced in the lecture Lf was taken with the same value of 2.67.
 
-* **Ipopt and CppAD:** Please refer to [this document](https://github.com/udacity/CarND-MPC-Project/blob/master/install_Ipopt_CppAD.md) for installation instructions.
-* [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). This is already part of the repo so you shouldn't have to worry about it.
-* Simulator. You can download these from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
-* Not a dependency but read the [DATA.md](./DATA.md) for a description of the data sent back from the simulator.
+First, the way point coordinates are transformed into the vehicle frame and a 3rd order polynomial function is fitted through them (only the next 6 coordinates). The cross track error is calculated here as well. Afterwards the initial state is defined and after the first actuator delay of 100ms the state vector is formed. It is composed as followed:
+
+* x_delay -> next x position after delay
+* y_delay -> next y position after delay
+* psi_delay -> next orientation after delay considering steering and Lf
+* v_delay -> next velocity considering current acceleration multiplied with the delay
+* cte_delay -> next cross track error calculated from the polyfit slope coefficient
+* epsi_delay -> next orientation change velocity
+
+At this point the state vector is fed together with the polyfit coefficients to the MPC and its equations are being solved. The next steering angle value and throttle value are returned by the MPC and send to the simulation. The act delay is considered as for the fact that the next state is interpolated in this time frame.
+
+In the following a will describe the MPC and its model implementation defined in the mpc.cpp.
+
+First, the time step length N is being defined which I have chosen to be 25. In general the computational load increases if this value increases. The time discretization was set to 0.05s and obviously the load is increased if this values is reduced. Wrong choosing of these two values makes the MPC very unstable. These values mean that the optimizer is considering a duration of 1.25s to determine the trajectory. 
+
+Next, the reference CTE, orientation and speed are defined. I have chosen 0, 0, and 45. Furthermore, the start indexes of the state vector parameters are set in accordance with N. 
+
+In the class FG_eval the required additions were made to compute the objective and constraints (and costs). In more detail, the problem is defined by adding first the costs from the reference state to fg[0]. Then the costs coming from the actual next actions delta_start and a_start (or orientation and throttle). Lastly, the costs that originates from two sequential actions is added as well. Please note that the factors 100 and 1000 are used to increase the impact of these objectives.
+
+The lower part of the FG_eval class definition finalizes the remaining fields of the vector fg by setting up the constraints, then looping through all time steps in the horizon N, calculating the polynomial from the fit, and update the state by these values within the discretization dt.
+
+Now that we have our problem definition not much is left to do in the MPC class definition. Basically we first set all constraints on the states like we did in the lecture. Secondly, the FG_eval object is created and the problem is solved in accordance with the state constraints. The solution is pushed into the result   vector and returned.
 
 
-## Basic Build Instructions
+#### 2) Results
+The highest impact on the stability of the MPC do the values N and dt have. Furthermore, the scaling factors in the FG_Eval class for defining the costs do have an strong impact as well. I have just chosen something that give me a proper influence on the performance. Maybe a parameter optimization like we did in the PID project can be helpful here as well.
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./mpc`.
+#### 3) Summary
+In summary I found this project quite difficult since there was a lot to implement. Especially the impact of the aforementioned scaling factors helped me a lot. However, at the same time it was very interesting but also showed with term 1 in the mind how easy deep neural network approaches can lead to similar results (at least in this isolated scenario).
 
-## Tips
 
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
 
-## Editor Settings
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
-
-## Hints!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
